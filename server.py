@@ -32,6 +32,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [gtm-mcp] %(levelname)s %(message)s"
@@ -535,6 +536,34 @@ if __name__ == "__main__":
     if port:
         mcp.settings.host = "0.0.0.0"
         mcp.settings.port = int(port)
+
+        # FastMCP protege contra DNS rebinding validando el header Host —
+        # por default solo acepta localhost, así que cualquier request real
+        # a través de Render (Host: mcp-tagmanager.onrender.com) llegaba con
+        # "421 Invalid Host header". Render expone el hostname público via
+        # RENDER_EXTERNAL_HOSTNAME automáticamente; lo usamos para permitir
+        # exactamente ese host (y su origin https) sin abrir la protección
+        # a cualquier dominio.
+        external_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+        if external_host:
+            mcp.settings.transport_security = TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=[external_host, f"{external_host}:*"],
+                allowed_origins=[f"https://{external_host}"],
+            )
+            logger.info("Host público permitido para streamable-http: %s", external_host)
+        else:
+            # No estamos en Render (u otro host que no exponga la variable):
+            # desactivamos la protección de Host en vez de arriesgarnos a
+            # bloquear tráfico legítimo con un valor adivinado.
+            mcp.settings.transport_security = TransportSecuritySettings(
+                enable_dns_rebinding_protection=False
+            )
+            logger.warning(
+                "RENDER_EXTERNAL_HOSTNAME no definido: protección de Host "
+                "desactivada para streamable-http."
+            )
+
         logger.info("Arrancando por HTTP (streamable-http) en 0.0.0.0:%s", port)
         mcp.run(transport="streamable-http")
     else:
