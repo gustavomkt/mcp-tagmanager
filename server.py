@@ -21,9 +21,14 @@ Requiere: haber corrido auth_setup.py una vez para generar token.json.
 Ver README.md para la puesta en marcha completa.
 """
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from google.auth.transport.requests import Request as GoogleAuthRequest
@@ -33,6 +38,8 @@ from googleapiclient.errors import HttpError
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import HTMLResponse, JSONResponse, Response
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [gtm-mcp] %(levelname)s %(message)s"
@@ -525,6 +532,239 @@ def publish_version(
         }
     except Exception as e:
         return _err("publish_version", e)
+
+
+# ---------------------------------------------------------------------------
+# Panel web ("GTM Fixer") — para operar sin tener Claude abierto.
+#
+# Corre en el MISMO servicio de Render que las tools MCP (mismo puerto, mismo
+# costo: $0). Cada endpoint /api/* llama exactamente a la misma función
+# Python que ya usa la tool MCP correspondiente — no hay lógica duplicada,
+# así que si algo se corrige aquí, se corrige en los dos lados a la vez.
+#
+# Protegido con una contraseña simple (DASHBOARD_PASSWORD). Sin esa variable
+# configurada, el panel se niega a autenticar a nadie — nunca queda abierto
+# por accidente.
+# ---------------------------------------------------------------------------
+
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+_SESSION_SECRET = hashlib.sha256(("gtm-fixer-dashboard::" + DASHBOARD_PASSWORD).encode()).digest()
+SESSION_MAX_AGE = 30 * 24 * 3600  # 30 días
+DASHBOARD_HTML_PATH = Path(__file__).parent / "dashboard.html"
+
+
+def _make_session_token() -> str:
+    # Sin "=" de relleno: http.cookies cita (y así rompe) cualquier valor de
+    # cookie que contenga "=", así que usamos base64 urlsafe SIN padding.
+    expires = int(time.time()) + SESSION_MAX_AGE
+    payload = str(expires).encode()
+    sig = hmac.new(_SESSION_SECRET, payload, hashlib.sha256).hexdigest()
+    payload_b64 = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+    return payload_b64 + "." + sig
+
+
+def _valid_session(token: str) -> bool:
+    try:
+        payload_b64, sig = token.split(".", 1)
+        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+        payload = base64.urlsafe_b64decode(padded.encode())
+        expected = hmac.new(_SESSION_SECRET, payload, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        return int(payload.decode()) > int(time.time())
+    except Exception:
+        return False
+
+
+def _authed(request: StarletteRequest) -> bool:
+    if not DASHBOARD_PASSWORD:
+        return False
+    return _valid_session(request.cookies.get("gtm_session", ""))
+
+
+def _require_auth(request: StarletteRequest) -> Optional[Response]:
+    if not _authed(request):
+        return JSONResponse({"ok": False, "error": "No autenticado."}, status_code=401)
+    return None
+
+
+async def _body(request: StarletteRequest) -> Dict[str, Any]:
+    try:
+        return await request.json()
+    except Exception:
+        return {}
+
+
+@mcp.custom_route("/", methods=["GET"])
+async def dashboard_page(request: StarletteRequest) -> Response:
+    try:
+        html = DASHBOARD_HTML_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        html = "<h1>dashboard.html no encontrado junto a server.py</h1>"
+    return HTMLResponse(html)
+
+
+@mcp.custom_route("/api/login", methods=["POST"])
+async def api_login(request: StarletteRequest) -> Response:
+    if not DASHBOARD_PASSWORD:
+        return JSONResponse(
+            {"ok": False, "error": "DASHBOARD_PASSWORD no está configurado en el servidor."},
+            status_code=500,
+        )
+    body = await _body(request)
+    password = body.get("password", "")
+    if not hmac.compare_digest(password, DASHBOARD_PASSWORD):
+        return JSONResponse({"ok": False, "error": "Contraseña incorrecta."}, status_code=401)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        "gtm_session", _make_session_token(), max_age=SESSION_MAX_AGE,
+        httponly=True, samesite="lax", secure=True, path="/",
+    )
+    return resp
+
+
+@mcp.custom_route("/api/logout", methods=["POST"])
+async def api_logout(request: StarletteRequest) -> Response:
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("gtm_session", path="/")
+    return resp
+
+
+@mcp.custom_route("/api/me", methods=["GET"])
+async def api_me(request: StarletteRequest) -> Response:
+    return JSONResponse({"authenticated": _authed(request)})
+
+
+@mcp.custom_route("/api/accounts", methods=["GET"])
+async def api_accounts(request: StarletteRequest) -> Response:
+    return _require_auth(request) or JSONResponse(list_accounts())
+
+
+@mcp.custom_route("/api/containers", methods=["GET"])
+async def api_containers(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    return JSONResponse(list_containers(request.query_params.get("account_id", "")))
+
+
+@mcp.custom_route("/api/workspaces", methods=["GET"])
+async def api_workspaces(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    return JSONResponse(list_workspaces(
+        request.query_params.get("account_id", ""),
+        request.query_params.get("container_id", ""),
+    ))
+
+
+@mcp.custom_route("/api/tags", methods=["GET"])
+async def api_tags(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    return JSONResponse(list_tags(
+        request.query_params.get("account_id", ""),
+        request.query_params.get("container_id", ""),
+        request.query_params.get("workspace_id", ""),
+    ))
+
+
+@mcp.custom_route("/api/triggers", methods=["GET"])
+async def api_triggers(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    return JSONResponse(list_triggers(
+        request.query_params.get("account_id", ""),
+        request.query_params.get("container_id", ""),
+        request.query_params.get("workspace_id", ""),
+    ))
+
+
+@mcp.custom_route("/api/variables", methods=["GET"])
+async def api_variables(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    return JSONResponse(list_variables(
+        request.query_params.get("account_id", ""),
+        request.query_params.get("container_id", ""),
+        request.query_params.get("workspace_id", ""),
+    ))
+
+
+@mcp.custom_route("/api/audit", methods=["GET"])
+async def api_audit(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    return JSONResponse(audit_workspace(
+        request.query_params.get("account_id", ""),
+        request.query_params.get("container_id", ""),
+        request.query_params.get("workspace_id", ""),
+    ))
+
+
+@mcp.custom_route("/api/versions", methods=["GET"])
+async def api_versions(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    return JSONResponse(list_versions(
+        request.query_params.get("account_id", ""),
+        request.query_params.get("container_id", ""),
+    ))
+
+
+@mcp.custom_route("/api/pause_tag", methods=["POST"])
+async def api_pause_tag(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    body = await _body(request)
+    return JSONResponse(pause_tag(
+        body.get("account_id", ""), body.get("container_id", ""),
+        body.get("workspace_id", ""), body.get("tag_id", ""), confirm=True,
+    ))
+
+
+@mcp.custom_route("/api/resume_tag", methods=["POST"])
+async def api_resume_tag(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    body = await _body(request)
+    return JSONResponse(resume_tag(
+        body.get("account_id", ""), body.get("container_id", ""),
+        body.get("workspace_id", ""), body.get("tag_id", ""), confirm=True,
+    ))
+
+
+@mcp.custom_route("/api/create_version", methods=["POST"])
+async def api_create_version(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    body = await _body(request)
+    return JSONResponse(create_version(
+        body.get("account_id", ""), body.get("container_id", ""),
+        body.get("workspace_id", ""), body.get("name", ""),
+        body.get("notes", ""), confirm=True,
+    ))
+
+
+@mcp.custom_route("/api/publish_version", methods=["POST"])
+async def api_publish_version(request: StarletteRequest) -> Response:
+    unauth = _require_auth(request)
+    if unauth:
+        return unauth
+    body = await _body(request)
+    return JSONResponse(publish_version(
+        body.get("account_id", ""), body.get("container_id", ""),
+        body.get("version_id", ""), confirm=True,
+    ))
 
 
 if __name__ == "__main__":

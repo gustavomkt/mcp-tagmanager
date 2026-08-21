@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GTM Fixer — Panel</title>
+<style>
+  :root{
+    --bg:#0b0d12; --card:#151822; --card2:#1b1f2b; --border:#2a2f3d;
+    --text:#e7e9ee; --dim:#9aa0ad; --amber:#f5a623; --amber-dim:#5a4520;
+    --green:#3ecf8e; --red:#ef5b5b; --blue:#5b9bef;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh;
+  }
+  .wrap{max-width:1000px;margin:0 auto;padding:24px 20px 60px;}
+  h1{font-size:22px;margin:0;}
+  h2{font-size:15px;margin:0 0 12px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border);}
+  .badge{font-size:11px;padding:3px 8px;border-radius:99px;background:var(--amber-dim);color:var(--amber);font-weight:600;}
+  button{
+    font:inherit; cursor:pointer; border:none; border-radius:8px; padding:9px 16px;
+    background:var(--amber); color:#1a1200; font-weight:600; transition:opacity .15s;
+  }
+  button:hover{opacity:.88;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.secondary{background:var(--card2);color:var(--text);border:1px solid var(--border);}
+  button.danger{background:var(--red);color:#fff;}
+  button.small{padding:5px 10px;font-size:12px;border-radius:6px;}
+  input,select,textarea{
+    font:inherit; background:var(--card2); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:9px 12px; width:100%;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--amber);outline-offset:1px;}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px;}
+  .field{margin-bottom:14px;}
+
+  /* ---- login ---- */
+  #login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;}
+  .login-card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:36px 32px; width:340px; text-align:center;
+  }
+  .login-card h1{margin-bottom:6px;}
+  .login-card p{color:var(--dim);font-size:13px;margin:0 0 22px;}
+  #login-error{color:var(--red);font-size:13px;min-height:18px;margin-top:10px;}
+
+  /* ---- app ---- */
+  #app{display:none;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:18px;}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  @media(max-width:700px){.grid3{grid-template-columns:1fr;}}
+
+  .tabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap;}
+  .tab-btn{background:var(--card2);color:var(--dim);border:1px solid var(--border);}
+  .tab-btn.active{background:var(--amber);color:#1a1200;border-color:var(--amber);}
+  .panel{display:none;}
+  .panel.active{display:block;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid var(--border);}
+  td{padding:10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  .pill{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600;}
+  .pill.on{background:rgba(62,207,142,.15);color:var(--green);}
+  .pill.off{background:rgba(239,91,91,.15);color:var(--red);}
+  .row-actions{display:flex;gap:8px;}
+  .empty{color:var(--dim);font-size:13px;padding:16px 0;text-align:center;}
+  .muted{color:var(--dim);font-size:12px;}
+
+  #toast{
+    position:fixed;bottom:20px;right:20px;max-width:340px;z-index:50;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .toast-msg{
+    padding:12px 16px;border-radius:10px;font-size:13px;background:var(--card2);
+    border:1px solid var(--border);border-left:3px solid var(--blue);
+    animation:slidein .15s ease-out;
+  }
+  .toast-msg.ok{border-left-color:var(--green);}
+  .toast-msg.err{border-left-color:var(--red);}
+  @keyframes slidein{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+
+  .spinner{
+    width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#1a1200;
+    border-radius:50%;display:inline-block;animation:spin .6s linear infinite;vertical-align:-2px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .finding-group{margin-bottom:14px;}
+  .finding-group h3{font-size:13px;margin:0 0 6px;color:var(--text);}
+  .finding-group ul{margin:0;padding-left:18px;font-size:13px;color:var(--dim);}
+  .finding-ok{color:var(--green);font-size:13px;}
+
+  .modal-bg{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;
+    align-items:center;justify-content:center;
+  }
+  .modal-bg.show{display:flex;}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:360px;}
+  .modal h3{margin:0 0 10px;}
+  .modal p{color:var(--dim);font-size:13px;margin:0 0 18px;}
+  .modal .actions{display:flex;gap:10px;justify-content:flex-end;}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <h1>🏷️ GTM Fixer</h1>
+    <p>Panel de operación de Google Tag Manager</p>
+    <div class="field" style="text-align:left;">
+      <label for="login-pass">Contraseña</label>
+      <input id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button id="login-btn" style="width:100%;">Entrar</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>🏷️ GTM Fixer</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span class="badge">conectado</span>
+        <button class="secondary small" id="logout-btn">Cerrar sesión</button>
+      </div>
+    </header>
+
+    <div class="card">
+      <h2>Cuenta / Contenedor / Workspace</h2>
+      <div class="grid3">
+        <div class="field">
+          <label for="sel-account">Cuenta</label>
+          <select id="sel-account"><option value="">Cargando…</option></select>
+        </div>
+        <div class="field">
+          <label for="sel-container">Contenedor</label>
+          <select id="sel-container"><option value="">—</option></select>
+        </div>
+        <div class="field">
+          <label for="sel-workspace">Workspace</label>
+          <select id="sel-workspace"><option value="">—</option></select>
+        </div>
+      </div>
+    </div>
+
+    <div id="main-content" style="display:none;">
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="tags">Tags</button>
+        <button class="tab-btn" data-tab="audit">Auditoría</button>
+        <button class="tab-btn" data-tab="versions">Versiones</button>
+      </nav>
+
+      <section class="panel active" id="panel-tags">
+        <div class="card">
+          <h2>Tags del workspace</h2>
+          <div id="tags-table"><div class="empty">Selecciona un workspace arriba.</div></div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-audit">
+        <div class="card">
+          <h2>Auditoría de buenas prácticas</h2>
+          <button id="run-audit-btn">Ejecutar auditoría</button>
+          <div id="audit-results" style="margin-top:18px;"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-versions">
+        <div class="card">
+          <h2>Crear versión (sin publicar)</h2>
+          <div class="field">
+            <label for="ver-name">Nombre de la versión</label>
+            <input id="ver-name" placeholder="Fix: pausar tag duplicado GA4">
+          </div>
+          <div class="field">
+            <label for="ver-notes">Notas</label>
+            <textarea id="ver-notes" rows="2" placeholder="Qué cambió y por qué"></textarea>
+          </div>
+          <button id="create-version-btn">Crear versión</button>
+        </div>
+        <div class="card">
+          <h2>Historial de versiones</h2>
+          <div id="versions-table"><div class="empty">Selecciona un workspace arriba.</div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div class="modal-bg" id="publish-modal">
+  <div class="modal">
+    <h3>⚠ Publicar a producción</h3>
+    <p id="publish-modal-text">Esto afecta el sitio en vivo de inmediato. ¿Confirmas?</p>
+    <div class="actions">
+      <button class="secondary" id="publish-cancel">Cancelar</button>
+      <button class="danger" id="publish-confirm">Sí, publicar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = { account:'', container:'', workspace:'', pendingPublish:null };
+
+// ---------- helpers ----------
+function toast(msg, kind){
+  const el = document.createElement('div');
+  el.className = 'toast-msg ' + (kind || '');
+  el.textContent = msg;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+
+async function api(path, opts){
+  opts = opts || {};
+  opts.credentials = 'same-origin';
+  if (opts.body && typeof opts.body !== 'string'){
+    opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+    opts.body = JSON.stringify(opts.body);
+  }
+  const res = await fetch(path, opts);
+  if (res.status === 401){ showLogin(); throw new Error('sesión expirada'); }
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, data };
+}
+
+function showLogin(){
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+function showApp(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  loadAccounts();
+}
+
+// ---------- auth ----------
+async function checkSession(){
+  const { data } = await api('/api/me');
+  if (data.authenticated) showApp(); else showLogin();
+}
+
+document.getElementById('login-btn').addEventListener('click', doLogin);
+document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+async function doLogin(){
+  const pass = document.getElementById('login-pass').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  err.textContent = '';
+  btn.disabled = true;
+  try {
+    const { status, data } = await api('/api/login', { method:'POST', body:{ password: pass } });
+    if (status === 200 && data.ok){
+      document.getElementById('login-pass').value = '';
+      showApp();
+    } else {
+      err.textContent = data.error || 'Contraseña incorrecta.';
+    }
+  } catch(e){
+    err.textContent = 'No se pudo conectar con el servidor.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await api('/api/logout', { method:'POST' });
+  showLogin();
+});
+
+// ---------- cascading selects ----------
+async function loadAccounts(){
+  const sel = document.getElementById('sel-account');
+  sel.innerHTML = '<option value="">Cargando…</option>';
+  const { data } = await api('/api/accounts');
+  if (!data.ok){ toast('Error al listar cuentas: ' + data.error, 'err'); sel.innerHTML = '<option value="">Error</option>'; return; }
+  sel.innerHTML = '<option value="">Selecciona…</option>' +
+    data.accounts.map(a => `<option value="${a.accountId}">${a.name}</option>`).join('');
+}
+
+document.getElementById('sel-account').addEventListener('change', async (e) => {
+  state.account = e.target.value;
+  const sel = document.getElementById('sel-container');
+  const wsSel = document.getElementById('sel-workspace');
+  sel.innerHTML = '<option value="">—</option>';
+  wsSel.innerHTML = '<option value="">—</option>';
+  document.getElementById('main-content').style.display = 'none';
+  if (!state.account) return;
+  sel.innerHTML = '<option value="">Cargando…</option>';
+  const { data } = await api('/api/containers?account_id=' + encodeURIComponent(state.account));
+  if (!data.ok){ toast('Error al listar contenedores: ' + data.error, 'err'); return; }
+  sel.innerHTML = '<option value="">Selecciona…</option>' +
+    data.containers.map(c => `<option value="${c.containerId}">${c.name}</option>`).join('');
+});
+
+document.getElementById('sel-container').addEventListener('change', async (e) => {
+  state.container = e.target.value;
+  const wsSel = document.getElementById('sel-workspace');
+  wsSel.innerHTML = '<option value="">—</option>';
+  document.getElementById('main-content').style.display = 'none';
+  if (!state.container) return;
+  wsSel.innerHTML = '<option value="">Cargando…</option>';
+  const { data } = await api(`/api/workspaces?account_id=${encodeURIComponent(state.account)}&container_id=${encodeURIComponent(state.container)}`);
+  if (!data.ok){ toast('Error al listar workspaces: ' + data.error, 'err'); return; }
+  wsSel.innerHTML = '<option value="">Selecciona…</option>' +
+    data.workspaces.map(w => `<option value="${w.workspaceId}">${w.name}</option>`).join('');
+});
+
+document.getElementById('sel-workspace').addEventListener('change', (e) => {
+  state.workspace = e.target.value;
+  if (!state.workspace){ document.getElementById('main-content').style.display = 'none'; return; }
+  document.getElementById('main-content').style.display = 'block';
+  loadTags();
+  document.getElementById('versions-table').innerHTML = '<div class="empty">Aún no cargado.</div>';
+  loadVersions();
+});
+
+// ---------- tabs ----------
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ---------- tags ----------
+async function loadTags(){
+  const box = document.getElementById('tags-table');
+  box.innerHTML = '<div class="empty">Cargando…</div>';
+  const q = `account_id=${encodeURIComponent(state.account)}&container_id=${encodeURIComponent(state.container)}&workspace_id=${encodeURIComponent(state.workspace)}`;
+  const { data } = await api('/api/tags?' + q);
+  if (!data.ok){ box.innerHTML = `<div class="empty">Error: ${data.error}</div>`; return; }
+  if (!data.tags.length){ box.innerHTML = '<div class="empty">No hay tags en este workspace.</div>'; return; }
+  box.innerHTML = `<table><thead><tr><th>Nombre</th><th>Tipo</th><th>Estado</th><th></th></tr></thead><tbody>` +
+    data.tags.map(t => `
+      <tr>
+        <td>${t.name}</td>
+        <td class="muted">${t.type}</td>
+        <td>${t.paused ? '<span class="pill off">Pausado</span>' : '<span class="pill on">Activo</span>'}</td>
+        <td class="row-actions">
+          <button class="small ${t.paused ? '' : 'secondary'}" data-tagid="${t.tagId}" data-action="${t.paused ? 'resume' : 'pause'}">
+            ${t.paused ? 'Reanudar' : 'Pausar'}
+          </button>
+        </td>
+      </tr>`).join('') + '</tbody></table>';
+
+  box.querySelectorAll('button[data-tagid]').forEach(btn => {
+    btn.addEventListener('click', () => toggleTag(btn.dataset.tagid, btn.dataset.action, btn));
+  });
+}
+
+async function toggleTag(tagId, action, btn){
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.innerHTML = '<span class="spinner"></span>';
+  const { data } = await api('/api/' + action + '_tag', {
+    method:'POST',
+    body:{ account_id: state.account, container_id: state.container, workspace_id: state.workspace, tag_id: tagId },
+  });
+  if (data.ok){
+    toast((action === 'pause' ? 'Tag pausado' : 'Tag reanudado') + '. Recuerda crear y publicar una versión para que el sitio en vivo lo refleje.', 'ok');
+    loadTags();
+  } else {
+    toast('Error: ' + data.error, 'err');
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+// ---------- audit ----------
+document.getElementById('run-audit-btn').addEventListener('click', async () => {
+  const box = document.getElementById('audit-results');
+  const btn = document.getElementById('run-audit-btn');
+  btn.disabled = true;
+  box.innerHTML = '<div class="empty">Auditando…</div>';
+  const q = `account_id=${encodeURIComponent(state.account)}&container_id=${encodeURIComponent(state.container)}&workspace_id=${encodeURIComponent(state.workspace)}`;
+  const { data } = await api('/api/audit?' + q);
+  btn.disabled = false;
+  if (!data.ok){ box.innerHTML = `<div class="empty">Error: ${data.error}</div>`; return; }
+
+  const groups = [
+    ['Tags sin ningún trigger', data.tags_without_triggers, t => `${t.name} (${t.tagId})`],
+    ['Triggers que no disparan ningún tag', data.triggers_without_any_tag, t => `${t.name} (${t.triggerId})`],
+    ['Posibles tags duplicados', data.possible_duplicate_tags, g => g.join(', ')],
+  ];
+  let html = '';
+  groups.forEach(([title, items, fmt]) => {
+    html += `<div class="finding-group"><h3>${title} (${items.length})</h3>`;
+    html += items.length ? `<ul>${items.map(i => `<li>${fmt(i)}</li>`).join('')}</ul>` : `<div class="finding-ok">✓ Nada que reportar</div>`;
+    html += '</div>';
+  });
+  html += `<div class="finding-group"><h3>Consent Mode</h3>` +
+    (data.consent_mode_configured_anywhere
+      ? `<div class="finding-ok">✓ Configurado en ${data.tags_with_consent_mode.length} tag(s)</div>`
+      : `<div class="muted">No se detectó Consent Mode configurado en ningún tag.</div>`) + '</div>';
+  box.innerHTML = html;
+});
+
+// ---------- versions ----------
+async function loadVersions(){
+  const box = document.getElementById('versions-table');
+  box.innerHTML = '<div class="empty">Cargando…</div>';
+  const q = `account_id=${encodeURIComponent(state.account)}&container_id=${encodeURIComponent(state.container)}`;
+  const { data } = await api('/api/versions?' + q);
+  if (!data.ok){ box.innerHTML = `<div class="empty">Error: ${data.error}</div>`; return; }
+  if (!data.versions.length){ box.innerHTML = '<div class="empty">No hay versiones aún.</div>'; return; }
+  box.innerHTML = `<table><thead><tr><th>ID</th><th>Nombre</th><th></th></tr></thead><tbody>` +
+    data.versions.map(v => `
+      <tr>
+        <td class="muted">${v.versionId}</td>
+        <td>${v.name || '(sin nombre)'}</td>
+        <td class="row-actions"><button class="small danger" data-vid="${v.versionId}" data-vname="${(v.name||'').replace(/"/g,'&quot;')}">Publicar</button></td>
+      </tr>`).join('') + '</tbody></table>';
+
+  box.querySelectorAll('button[data-vid]').forEach(btn => {
+    btn.addEventListener('click', () => askPublish(btn.dataset.vid, btn.dataset.vname));
+  });
+}
+
+document.getElementById('create-version-btn').addEventListener('click', async () => {
+  const name = document.getElementById('ver-name').value.trim();
+  const notes = document.getElementById('ver-notes').value.trim();
+  if (!name){ toast('Ponle un nombre a la versión.', 'err'); return; }
+  const btn = document.getElementById('create-version-btn');
+  btn.disabled = true;
+  const { data } = await api('/api/create_version', {
+    method:'POST',
+    body:{ account_id: state.account, container_id: state.container, workspace_id: state.workspace, name, notes },
+  });
+  btn.disabled = false;
+  if (data.ok){
+    toast('Versión creada: ' + data.name + ' (id ' + data.versionId + '). Aún no está publicada.', 'ok');
+    document.getElementById('ver-name').value = '';
+    document.getElementById('ver-notes').value = '';
+    loadVersions();
+  } else {
+    toast('Error: ' + data.error, 'err');
+  }
+});
+
+function askPublish(versionId, versionName){
+  state.pendingPublish = versionId;
+  document.getElementById('publish-modal-text').textContent =
+    `Vas a publicar la versión "${versionName || versionId}" a producción. Esto afecta el sitio en vivo de inmediato.`;
+  document.getElementById('publish-modal').classList.add('show');
+}
+document.getElementById('publish-cancel').addEventListener('click', () => {
+  document.getElementById('publish-modal').classList.remove('show');
+  state.pendingPublish = null;
+});
+document.getElementById('publish-confirm').addEventListener('click', async () => {
+  const versionId = state.pendingPublish;
+  document.getElementById('publish-modal').classList.remove('show');
+  if (!versionId) return;
+  const { data } = await api('/api/publish_version', {
+    method:'POST',
+    body:{ account_id: state.account, container_id: state.container, version_id: versionId },
+  });
+  if (data.ok){
+    toast('Publicado en producción: ' + (data.name || versionId), 'ok');
+    loadVersions();
+  } else {
+    toast('Error al publicar: ' + data.error, 'err');
+  }
+});
+
+checkSession();
+</script>
+</body>
+</html>
